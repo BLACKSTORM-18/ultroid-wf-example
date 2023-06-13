@@ -1,46 +1,88 @@
-#Docker Work na BSDK
-
 name: Ultroid Workflow
 
 on:
     push:
     workflow_dispatch:
     
+env:
+ GitHubName: ${{ github.event.repository.owner.login }}
+ GitHubMail: ${{ github.event.repository.owner.login }}@users.noreply.github.com
+ GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
-       - name: Checkout
-         uses: actions/checkout@main
-       
-       - uses: styfle/cancel-workflow-action@0.9.0
-         name: "Cancel duplicate workflow runs"
-         with:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - uses: styfle/cancel-workflow-action@0.9.1
+        name: "Cancel duplicate workflow runs"
+        with:
             all_but_latest: true
             access_token: ${{ github.token }}
-       - name: initialization
-         continue-on-error: true
-         run: |
-           git config --global user.name ${{ secrets.GitHubName }}
-           git config --global user.email ${{ secrets.GitHubMail }}
-           git config --global credential.helper store
-           echo "https://${{ secrets.GitHubName }}:${{ secrets.GH_TOKEN }}@github.com" > ~/.git-credentials
-       - name: cloning repo
-         continue-on-error: true
-         run: |
-           git clone https://${{ secrets.GitHubName }}:${{ secrets.GH_TOKEN }}@${{ secrets.CREDS }} ultroid
-       - name: Running Ultroid
-         timeout-minutes: 350
-         continue-on-error: true
-         run: |
-           sudo sh action.sh
-       - name: Loop workflow
-         continue-on-error: true
-         run: |
-              git clone https://github.com/${GITHUB_REPOSITORY} loop
-              cd loop || exit 1
-              echo $(date -u +%T%P) >> loop.txt
-              git add loop.txt
-              git commit -m "Workflow : Loop $(date -u +%D-%T%P)"
-              git push -q https://${{ secrets.GH_TOKEN }}@github.com/${GITHUB_REPOSITORY} HEAD:main
+
+      - name: Initialize
+        continue-on-error: true
+        run: |
+          git config --global user.name ${GitHubName} && git config --global user.email ${GitHubMail}
+          git config --global credential.helper 'store --file $XDG_CONFIG_HOME/git/credentials'
+          [ -d "$XDG_CONFIG_HOME/git" ] && echo "" || mkdir $XDG_CONFIG_HOME/git
+          echo "https://${GitHubName}:${{ secrets.GH_TOKEN }}@github.com" > $XDG_CONFIG_HOME/git/credentials
+          sudo hostnamectl set-hostname errored-af
+          # Add PPA for python3.9 or python3.9+
+          sudo add-apt-repository ppa:deadsnakes/ppa
+          sudo apt-get update
+
+      - name: Cache apt packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: bash cmake curl ffmpeg gcc git jq make mediainfo megatools neofetch wkhtmltopdf zip software-properties-common python3.10 python3.10-dev
+          version: 1.0
+
+      - name: Load Config file
+        continue-on-error: false
+        run: |
+          if [ -z "${{ secrets.CREDS }}" ]; then
+            echo "CREDS is empty"
+            exit 1
+          fi
+          
+          case ${{ secrets.CREDS }} in 
+            (*gist.github*)
+              if [ ! -d ultroid ]; then
+                mkdir ultroid
+              fi        
+              curl -L ${{ secrets.CREDS }} > ultroid/.env
+            ;;
+            (*raw.githubusercontent*)
+              if [ ! -d ultroid ]; then
+                mkdir ultroid
+              fi
+              curl -L ${{ secrets.CREDS }} > ultroid/.env
+            ;;
+            (*//github.com/*)
+              git clone ${{ secrets.CREDS }} ultroid
+          esac
+          if [ ! -f ultroid/.env ]; then
+            echo "No .env file found"
+            exit 1
+          fi
+
+      - name: Install Ultroid
+        continue-on-error: false
+        run: wget https://raw.githubusercontent.com/TeamUltroid/Ultroid/dev/installer.sh && chmod +x installer.sh && sudo bash installer.sh --dir="/root/TeamUltroid" --branch=dev --env-file="ultroid/.env"
+
+      - name: Run Ultroid
+        continue-on-error: false
+        run: sudo bash action.sh
+
+      - name: Loop workflow
+        continue-on-error: false
+        run: |
+          git clone https://${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY} loop
+          cd loop || exit 1
+          echo $(date -u +%T%P) >> loop.txt
+          git add loop.txt
+          git commit -m "Workflow : Loop $(date -u +%D-%T%P)"
+          git push -q https://${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY} HEAD:main

@@ -1,6 +1,11 @@
-branch=main
-git clone -b $branch https://github.com/TeamUltroid/Ultroid /root/TeamUltroid
 cp ultroid/.env /root/TeamUltroid/.env
-cd /root/TeamUltroid
-docker build . --rm --force-rm --compress --pull --file Dockerfile -t ultroid
-docker run --privileged --env-file .env --rm -i ultroid
+cd /root/TeamUltroid && ls
+trap 'exit()'
+timeout --preserve-status 19500 bash startup &
+pid=$!
+wait $pid
+if [ $? -eq 143 ]; then
+    exit 0
+else
+    exit 1
+fi
